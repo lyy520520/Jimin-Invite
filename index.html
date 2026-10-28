@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jimin · 账户激活</title>
+  <style>
+    :root { color-scheme: light; --bg:#f7f4ff; --card:#fff; --ink:#382b55; --muted:#786d91; --accent:#8062c7; --border:#e4daf8; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; background:linear-gradient(135deg,#f7f4ff,#fdfbff); color:var(--ink); font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+    main { width:min(100%,520px); background:var(--card); border:1px solid var(--border); border-radius:24px; padding:30px; box-shadow:0 18px 55px #48306b16; }
+    .mark { width:56px;height:56px;border-radius:18px;background:#eee7ff;display:grid;place-items:center;font-size:28px;margin-bottom:18px; }
+    h1 { font-size:25px; margin:0 0 8px; }
+    p { color:var(--muted); line-height:1.65; margin:8px 0 18px; }
+    label { display:block; font-weight:650; margin:16px 0 7px; }
+    input { width:100%; border:1px solid var(--border); border-radius:12px; padding:12px 14px; font:inherit; color:var(--ink); outline:none; }
+    input:focus { border-color:var(--accent); box-shadow:0 0 0 3px #8062c720; }
+    button { width:100%; margin-top:20px; border:0; border-radius:12px; padding:13px 16px; background:var(--accent); color:white; font:inherit; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:wait; }
+    .status { border-radius:12px; padding:12px 14px; background:#f5f1ff; color:var(--ink); line-height:1.55; overflow-wrap:anywhere; }
+    .small { font-size:13px; }
+    .hidden { display:none; }
+    code { overflow-wrap:anywhere; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="mark" aria-hidden="true">🐦</div>
+  <h1>欢迎加入 Jimin</h1>
+  <p>请设置你的 Jimin 账户密码。完成后，就可以在 Jimin 桌面程序中使用邀请邮箱登录。</p>
+  <div id="status" class="status" role="status">正在验证邀请链接……</div>
+  <form id="password-form" class="hidden">
+    <label for="password">新密码</label>
+    <input id="password" type="password" autocomplete="new-password" minlength="8" required placeholder="至少 8 个字符">
+    <label for="confirm">再次输入新密码</label>
+    <input id="confirm" type="password" autocomplete="new-password" minlength="8" required placeholder="确认密码">
+    <button id="submit" type="submit">设置密码并激活账户</button>
+  </form>
+  <p class="small">安全提示：本页面不会要求你提供 ChatGPT 密码，也不会收集或上传 ChatGPT OAuth 令牌。</p>
+</main>
+
+<!-- The URL and publishable/anon key are public client configuration, not admin secrets. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(() => {
+  // TODO: Replace both placeholders before publishing this page.
+  const SUPABASE_URL = "https://zgxlkjuwthjprtaqohzb.supabase.co";
+  const SUPABASE_PUBLIC_KEY = "sb_publishable_9Ase-y8Y4jtfmA0wU1ndHw_d9XfqJn1";
+
+  const statusBox = document.getElementById("status");
+  const form = document.getElementById("password-form");
+  const submit = document.getElementById("submit");
+
+  function showStatus(message) { statusBox.textContent = message; }
+  function configReady() {
+    return !SUPABASE_URL.includes("YOUR_PROJECT_REF") &&
+           !SUPABASE_PUBLIC_KEY.includes("YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY");
+  }
+
+  async function init() {
+    if (!configReady()) {
+      showStatus("页面尚未配置：请先填入 Supabase Project URL 和公开 Publishable/anon key，再发布页面。");
+      return;
+    }
+    if (!window.supabase || typeof window.supabase.createClient !== "function") {
+      showStatus("认证组件加载失败。请检查网络连接后刷新页面。");
+      return;
+    }
+
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLIC_KEY, {
+      auth: {
+        detectSessionInUrl: true,
+        persistSession: false,
+        autoRefreshToken: false,
+        flowType: "implicit"
+      }
+    });
+
+    try {
+      const { data, error } = await client.auth.getSession();
+      if (error) throw error;
+      if (!data.session) {
+        showStatus("没有检测到有效的邀请会话。请重新打开最新的邀请链接；邀请链接可能已过期或已被使用。");
+        return;
+      }
+
+      // Do not display the access token or other credentials in the page.
+      form.classList.remove("hidden");
+      showStatus("邀请链接验证成功。请设置一个新的 Jimin 账户密码。");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const password = document.getElementById("password").value;
+        const confirm = document.getElementById("confirm").value;
+        if (password.length < 8) {
+          showStatus("密码至少需要 8 个字符。");
+          return;
+        }
+        if (password !== confirm) {
+          showStatus("两次输入的密码不一致，请重新确认。");
+          return;
+        }
+
+        submit.disabled = true;
+        showStatus("正在设置密码……");
+        try {
+          const { error: updateError } = await client.auth.updateUser({ password });
+          if (updateError) throw updateError;
+          form.classList.add("hidden");
+          showStatus("账户激活成功！现在可以打开 Jimin 桌面程序，使用受邀邮箱和刚设置的密码登录。请关闭此页面，不要转发邀请链接。");
+          // Clear the one-time credentials from the visible URL after success.
+          history.replaceState(null, "", location.pathname + location.search);
+          await client.auth.signOut({ scope: "local" }).catch(() => {});
+        } catch (err) {
+          showStatus("设置密码失败：" + (err && err.message ? err.message : "未知错误") + "。请检查链接是否过期，然后重新尝试。");
+        } finally {
+          submit.disabled = false;
+        }
+      }, { once: true });
+    } catch (err) {
+      showStatus("验证邀请时发生错误：" + (err && err.message ? err.message : "未知错误") + "。请重新打开最新邀请链接。");
+    }
+  }
+  init();
+})();
+</script>
+</body>
+</html>
